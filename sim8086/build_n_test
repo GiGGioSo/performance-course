@@ -1,0 +1,86 @@
+#!/bin/sh
+
+if [ $# -ne 2 ]; then
+    echo "
+Usage:
+
+    build_n_test [input_file] [output_file]
+
+  where [input_file] must be a compiled assembly program
+
+    "
+    exit 1
+fi
+
+echo "
+-----------------------------
+Compiling sim8086...
+-----------------------------
+"
+if gcc sim8086.c -o sim8086 ; then
+
+    echo "
+-----------------------------
+Executing sim8086...
+-----------------------------
+"
+    if ./sim8086 $1 $2 ; then
+        echo "
+-----------------------------
+Compiling $2 to then compare with $1...
+-----------------------------
+"
+        if nasm $2 -o "$2.out" ; then
+            echo "
+-----------------------------
+Diffing $1 with $2.out...
+-----------------------------
+"
+            DIFF=$(diff $1 "$2.out")
+            if [ $? -eq 0 ] ; then
+                echo "
+-----------------------------
+Successfully built and tested the program!
+-----------------------------
+"
+                if [ -z $DIFF ] ; then
+                    echo "
+-----------------------------
+The files compile to the same binary!
+-----------------------------
+"
+                else
+                    echo "
+-----------------------------
+THE FILES DO NOT COMPILE TO THE SAME BINARY! Check the sources!
+-----------------------------
+"
+                fi
+            else
+                echo "
+An error accured when diffing the files!
+-----------------------------
+"
+            fi
+        else
+            echo "
+An error accured when compiling $2!
+-----------------------------
+"
+        fi
+    else
+
+        echo "
+An error accured when executing sim8086!
+-----------------------------
+"
+    fi
+
+else
+    echo "
+
+An error accured when compiling sim8086!
+-----------------------------
+"
+fi
+
