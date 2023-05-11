@@ -134,13 +134,12 @@ int decode_instructions_into_file(InstrBuffer ib, const unsigned char *fp) {
     PRINT_OUTPUT("bits 16\n\n");
 
     while(ib_readable(ib)) {
-
         uint8_t b1 = ib_read_byte(&ib);
 
         uint8_t b1h = (b1 & 0b1111 << 4) >> 4;
 
         if (b1h == 0b1000) {
-            if ((b1 & 0b11 << 2) >> 2 == 0b10) {
+            if ((b1 & 0b11<<2) >> 2 == 0b10) {
                 // NOTE: Register/memory to/from register
                 uint8_t b2 = ib_read_byte(&ib);
 
@@ -227,8 +226,20 @@ int decode_instructions_into_file(InstrBuffer ib, const unsigned char *fp) {
 
         } else if (b1h == 0b1100) {
             // NOTE: Immediate to register/memory
-            assert(0 &&
-                   "\"Immediate to register/memory\" is not implemented!");
+            if ((b1 & 0b111 << 3) >> 3 == 0b011) {
+                uint8_t b2 = ib_read_byte(&ib);
+
+                uint8_t w = b1 & 1;
+                PRINT_DEBUG("\tW: 0x%hhx\n", w);
+                uint8_t mod = (b2 & (0b11 << 6)) >> 6;
+                PRINT_DEBUG("\tMod: 0x%hhx\n", mod);
+                uint8_t rm = b2 & 0b111;
+                PRINT_DEBUG("\tR/M: 0x%hhx\n", rm);
+                // TODO: Finish to implement, this is part of listing 40
+            } else {
+                assert(0 &&
+                       "Unknown \"Immediate to register/memory\" instruction");
+            }
         } else if (b1h == 0b1011) {
             // NOTE: Immediate to register
             uint8_t w = (b1 & 1 << 3) >> 3;
