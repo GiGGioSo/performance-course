@@ -32,12 +32,12 @@
     #define PRINT_DEBUG(...) printf(__VA_ARGS__)
     #define PRINT_ERROR(...) fprintf(stderr, __VA_ARGS__)
 #else
-    #define PRINT_DEBUG(...) 0
+    #define PRINT_DEBUG(...) (void)0
 
     #if ERROR
         #define PRINT_ERROR(...) fprintf(stderr, __VA_ARGS__)
     #else
-        #define PRINT_ERROR(...) 0
+        #define PRINT_ERROR(...) (void)0
     #endif
 #endif
 
@@ -55,19 +55,23 @@
     goto defer;\
 } while(0)
 
+#define SIGN_CHAR(n) ((n < 0) ? '-' : '+')
+
+#define ABS(n) ((n < 0) ? -n : n)
+
 typedef struct {
     uint8_t *buffer;
     uint32_t size;
     uint32_t current_index;
 } InstrBuffer;
-int ib_from_file(const unsigned char *fp, InstrBuffer *ib);
+int ib_from_file(const char *fp, InstrBuffer *ib);
 int ib_readable(InstrBuffer ib);
 uint8_t ib_read_byte(InstrBuffer *ib);
 
-int decode_instructions_into_file(InstrBuffer ib, const unsigned char *fp);
+int decode_instructions_into_file(InstrBuffer ib, const char *fp);
 
 // NOTE: Antepone the W bit to the register bits
-unsigned char *reg_encodings[] = {
+char *reg_encodings[] = {
     "al",
     "cl",
     "dl",
@@ -87,7 +91,7 @@ unsigned char *reg_encodings[] = {
 };
 
 // NOTE: Antepone the MOD bits to the register bits
-unsigned char *rm_encodings[] = {
+char *rm_encodings[] = {
     "[bx + si",
     "[bx + di",
     "[bp + si",
@@ -108,8 +112,8 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    const unsigned char *input_path = argv[1];
-    const unsigned char *output_path = argv[2];
+    const char *input_path = argv[1];
+    const char *output_path = argv[2];
 
     InstrBuffer ib;
     if (ib_from_file(input_path, &ib)) return 1;
@@ -119,7 +123,7 @@ int main(int argc, char **argv) {
     return 0;
 }
 
-int decode_instructions_into_file(InstrBuffer ib, const unsigned char *fp) {
+int decode_instructions_into_file(InstrBuffer ib, const char *fp) {
 
     FILE *fout = NULL;
     int result = 0;
@@ -156,7 +160,7 @@ int decode_instructions_into_file(InstrBuffer ib, const unsigned char *fp) {
 
                 if (mod == 0b00) {
                     // NOTE: Memory mode, no displacement except for rm = 0b110
-                    unsigned char *dst = reg_encodings[w << 3 | reg];
+                    char *dst = reg_encodings[w << 3 | reg];
                     if (rm == 0b110) {
                         // NOTE: Special case
                         uint16_t d16 = ib_read_byte(&ib) |
@@ -168,7 +172,7 @@ int decode_instructions_into_file(InstrBuffer ib, const unsigned char *fp) {
                         }
                     } else {
                         // NOTE: Standard case
-                        unsigned char *src = rm_encodings[rm];
+                        char *src = rm_encodings[rm];
 
                         if (d == 1) {
                             PRINT_OUTPUT("mov %s, %s]\n", dst, src);
@@ -179,15 +183,17 @@ int decode_instructions_into_file(InstrBuffer ib, const unsigned char *fp) {
 
                 } else if (mod == 0b01) {
                     // NOTE: Memory mode, 8-bit displacement follows
-                    unsigned char *dst = reg_encodings[w << 3 | reg];
-                    unsigned char *src = rm_encodings[rm];
-                    uint8_t d8 = ib_read_byte(&ib);
+                    char *dst = reg_encodings[w << 3 | reg];
+                    char *src = rm_encodings[rm];
+                    int8_t d8 = (int8_t) ib_read_byte(&ib);
 
                     if (d8 != 0) {
                         if (d == 1) {
-                            PRINT_OUTPUT("mov %s, %s + %hhu]\n", dst, src, d8);
+                            PRINT_OUTPUT("mov %s, %s %c %hhi]\n",
+                                         dst, src, SIGN_CHAR(d8), ABS(d8));
                         } else {
-                            PRINT_OUTPUT("mov %s + %hhu], %s\n", src, d8, dst);
+                            PRINT_OUTPUT("mov %s %c %hhi], %s\n",
+                                         src, SIGN_CHAR(d8), ABS(d8), dst);
                         }
                     } else { // when the displacement is 0, do not display it
                         if (d == 1) {
@@ -198,35 +204,38 @@ int decode_instructions_into_file(InstrBuffer ib, const unsigned char *fp) {
                     }
 
                 } else if (mod == 0b10) {
-                    // NOTE: Memory mode, 8-bit displacement follows
-                    unsigned char *dst = reg_encodings[w << 3 | reg];
-                    unsigned char *src = rm_encodings[rm];
-                    uint16_t d16 = ib_read_byte(&ib) |
-                                   ib_read_byte(&ib) << 8;
+                    // NOTE: Memory mode, 16-bit displacement follows
+                    char *dst = reg_encodings[w << 3 | reg];
+                    char *src = rm_encodings[rm];
+                    int16_t d16 = (int16_t) (ib_read_byte(&ib) |
+                                             ib_read_byte(&ib) << 8);
 
                     if (d == 1) {
-                        PRINT_OUTPUT("mov %s, %s + %hu]\n", dst, src, d16);
+                        PRINT_OUTPUT("mov %s, %s %c %hi]\n",
+                                     dst, src, SIGN_CHAR(d16), ABS(d16));
                     } else {
-                        PRINT_OUTPUT("mov %s + %hu], %s\n", src, d16, dst);
+                        PRINT_OUTPUT("mov %s %c %hi], %s\n",
+                                     src, SIGN_CHAR(d16), ABS(d16), dst);
                     }
 
                 } else if (mod == 0b11) {
                     // NOTE: Register mode (no displacement)
-                    unsigned char *dst = reg_encodings[w << 3 | reg];
-                    unsigned char *src = reg_encodings[w << 3 | rm];
+                    char *dst = reg_encodings[w << 3 | reg];
+                    char *src = reg_encodings[w << 3 | rm];
 
-                    if (d == 0) SWAP(unsigned char *, dst, src);
+                    if (d == 0) SWAP(char *, dst, src);
 
                     PRINT_OUTPUT("mov %s, %s\n", dst, src);
                 }
 
             } else {
-                assert(0 && "This opcode is not implemented!");
+                PRINT_ERROR("This opcode is not implemented!");
+                // assert(0 && "This opcode is not implemented!");
             }
 
         } else if (b1h == 0b1100) {
             // NOTE: Immediate to register/memory
-            if ((b1 & 0b111 << 3) >> 3 == 0b011) {
+            if ((b1 & 0b111 << 1) >> 1 == 0b011) {
                 uint8_t b2 = ib_read_byte(&ib);
 
                 uint8_t w = b1 & 1;
@@ -236,9 +245,94 @@ int decode_instructions_into_file(InstrBuffer ib, const unsigned char *fp) {
                 uint8_t rm = b2 & 0b111;
                 PRINT_DEBUG("\tR/M: 0x%hhx\n", rm);
                 // TODO: Finish to implement, this is part of listing 40
+                if (mod == 0b00) {
+                    // NOTE: Memory mode, no displacement except for rm = 0b110
+                    if (rm == 0b110) {
+                        // NOTE: Special case
+                        uint16_t d16 = ib_read_byte(&ib) |
+                                       ib_read_byte(&ib) << 8;
+                        if (w == 1) {
+                            int16_t data = (int16_t) (ib_read_byte(&ib) |
+                                                      ib_read_byte(&ib) << 8);
+                            PRINT_OUTPUT("mov [%d], word %hi\n", d16, data);
+                        } else {
+                            int8_t data = (int8_t) ib_read_byte(&ib);
+                            PRINT_OUTPUT("mov [%d], byte %hhi\n", d16, data);
+                        }
+                    } else {
+                        // NOTE: Standard case
+                        char *src = rm_encodings[rm];
+
+                        if (w == 1) {
+                            int16_t data = (int16_t) (ib_read_byte(&ib) |
+                                                      ib_read_byte(&ib) << 8);
+                            PRINT_OUTPUT("mov %s], word %hi\n", src, data);
+                        } else {
+                            int8_t data = (int8_t) ib_read_byte(&ib);
+                            PRINT_OUTPUT("mov %s], byte %hhi\n", src, data);
+                        }
+                    }
+
+                } else if (mod == 0b01) {
+                    // NOTE: Memory mode, 8-bit displacement follows
+                    char *src = rm_encodings[rm];
+                    int8_t d8 = (int8_t) ib_read_byte(&ib);
+
+                    if (w == 1) {
+                        int16_t data = (int16_t) (ib_read_byte(&ib) |
+                                                  ib_read_byte(&ib) << 8);
+
+                        if (d8 != 0) {
+                            PRINT_OUTPUT("mov %s %c %hhi], word %hi\n",
+                                         src, SIGN_CHAR(d8), ABS(d8), data);
+                        } else { // if displacement is 0, do not display it
+                            PRINT_OUTPUT("mov %s], word %hi\n", src, data);
+                        }
+                    } else { // w == 0, so only 8 bit data
+                        int8_t data = (int8_t) ib_read_byte(&ib);
+
+                        if (d8 != 0) {
+                            PRINT_OUTPUT("mov %s %c %hhi], byte %hhi\n",
+                                         src, SIGN_CHAR(d8), ABS(d8), data);
+                        } else { // if displacement is 0, do not display it
+                            PRINT_OUTPUT("mov %s], byte %hhi\n", src, data);
+                        }
+                    }
+
+                } else if (mod == 0b10) {
+                    // NOTE: Memory mode, 16-bit displacement follows
+                    char *src = rm_encodings[rm];
+                    uint16_t d16 = ib_read_byte(&ib) |
+                                   ib_read_byte(&ib) << 8;
+
+                    if (w == 1) {
+                        int16_t data = (int16_t) (ib_read_byte(&ib) |
+                                                  ib_read_byte(&ib) << 8);
+                        PRINT_OUTPUT("mov %s + %hu], word %hi\n",
+                                     src, d16, data);
+                    } else {
+                        int8_t data = (int8_t) ib_read_byte(&ib);
+                        PRINT_OUTPUT("mov %s + %hu], byte %hhi\n",
+                                     src, d16, data);
+                    }
+
+                } else if (mod == 0b11) {
+                    // NOTE: Register mode (no displacement)
+                    char *src = reg_encodings[w << 3 | rm];
+
+                    if (w == 1) {
+                        int16_t data = (int16_t) (ib_read_byte(&ib) |
+                                                  ib_read_byte(&ib) << 8);
+                        PRINT_OUTPUT("mov %s, word %hi\n", src, data);
+                    } else {
+                        int8_t data = (int8_t) ib_read_byte(&ib);
+                        PRINT_OUTPUT("mov %s, byte %hhi\n", src, data);
+                    }
+                }
             } else {
-                assert(0 &&
-                       "Unknown \"Immediate to register/memory\" instruction");
+                PRINT_ERROR("Unknown \"Immediate to register/memory\" instruction");
+                // assert(0 &&
+                //        "Unknown \"Immediate to register/memory\" instruction");
             }
         } else if (b1h == 0b1011) {
             // NOTE: Immediate to register
@@ -247,7 +341,7 @@ int decode_instructions_into_file(InstrBuffer ib, const unsigned char *fp) {
             uint8_t reg = b1 & 0b111;
             PRINT_DEBUG("\tReg: 0x%hhx\n", reg);
 
-            unsigned char *dst = reg_encodings[w << 3 | reg];
+            char *dst = reg_encodings[w << 3 | reg];
 
             if (w == 0) {
                 uint8_t data8 = ib_read_byte(&ib);
@@ -264,7 +358,7 @@ int decode_instructions_into_file(InstrBuffer ib, const unsigned char *fp) {
     return result;
 }
 
-int ib_from_file(const unsigned char *fp, InstrBuffer *ib) {
+int ib_from_file(const char *fp, InstrBuffer *ib) {
     int result = 0;
     FILE *fin = NULL;
 
@@ -300,7 +394,7 @@ int ib_from_file(const unsigned char *fp, InstrBuffer *ib) {
         ib->buffer = malloc(ib->size);
         if (ib->buffer == NULL) {
             PRINT_ERROR(
-                "ERROR: Could not allocate %lu bytes to read from file %s.\n",
+                "ERROR: Could not allocate %u bytes to read from file %s.\n",
                 ib->size, fp);
             return_defer(4);
         }

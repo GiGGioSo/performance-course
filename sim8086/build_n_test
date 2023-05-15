@@ -17,7 +17,7 @@ echo "
 Compiling sim8086...
 -----------------------------
 "
-if gcc sim8086.c -o sim8086 ; then
+if gcc sim8086.c -o sim8086 -Wall ; then
 
     echo "
 -----------------------------
