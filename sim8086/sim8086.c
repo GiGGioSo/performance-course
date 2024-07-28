@@ -351,6 +351,24 @@ int decode_instructions_into_file(InstrBuffer ib, const char *fp) {
                                   ib_read_byte(&ib) << 8;
                 PRINT_OUTPUT("mov %s, %hu\n", dst, data16);
             }
+        } else if ((b1 & (0b111111 << 2)) >> 2 == 0b101000) {
+            // NOTE: Memory to accumulator (or viceversa)
+            // NOTE: Direction decides the following:
+            //          - 0: memory to accumulator
+            //          - 1: accumulator to memory 
+            uint8_t direction = (b1 & 0b10) >> 1;
+            uint8_t accumulator_size = (b1 & 0b1);
+            uint16_t data16 = ib_read_byte(&ib) |
+                              ib_read_byte(&ib) << 8;
+            if (direction == 0) {
+                PRINT_OUTPUT("mov %s, [%hu]\n",
+                             (accumulator_size) ? "ax" : "al",
+                             data16);
+            } else {
+                PRINT_OUTPUT("mov [%hu], %s\n",
+                             data16,
+                             (accumulator_size) ? "ax" : "al");
+            }
         }
     }
     defer:
